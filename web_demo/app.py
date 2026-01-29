@@ -116,9 +116,15 @@ def api_analyze():
     summary = results['processing_summary']
     daily_report = results['daily_report']
     
-    # Top alerts
+    # Filter top alerts to only high-value (>$25K) and limit to top 50
+    high_value_alerts = [
+        alert for alert in results['top_priority_alerts'] 
+        if (alert.estimated_recovery or 0) > 25000
+    ][:50]  # Top 50 high-value alerts for pagination
+    
+    # Top alerts with patient and claim info
     top_alerts = []
-    for alert in results['top_priority_alerts'][:10]:
+    for alert in high_value_alerts:
         patient = demo_data['patients_dict'][alert.patient_id]
         claim = next(c for c in demo_data['claims'] if c.claim_id == alert.claim_id)
         
@@ -146,52 +152,20 @@ def api_analyze():
             }
         })
     
-    # Red flag accounts
-    red_flag_patients = {}
-    for alert in results['top_priority_alerts']:
-        if alert.severity == "HIGH":
-            if alert.patient_id not in red_flag_patients:
-                patient = demo_data['patients_dict'][alert.patient_id]
-                red_flag_patients[alert.patient_id] = {
-                    'patient': patient,
-                    'alerts': [],
-                    'total_recovery': 0
-                }
-            red_flag_patients[alert.patient_id]['alerts'].append(alert)
-            red_flag_patients[alert.patient_id]['total_recovery'] += (alert.estimated_recovery or 0)
-    
-    # Sort by total recovery
-    sorted_red_flags = sorted(
-        red_flag_patients.items(),
-        key=lambda x: x[1]['total_recovery'],
-        reverse=True
-    )[:15]
-    
-    red_flags = []
-    for patient_id, data in sorted_red_flags:
-        patient = data['patient']
-        red_flags.append({
-            'patient_id': patient_id,
-            'patient_name': f"{patient.first_name} {patient.last_name}",
-            'mrn': patient.mrn,
-            'alert_count': len(data['alerts']),
-            'total_recovery': round(data['total_recovery'], 2),
-            'top_issue': data['alerts'][0].alert_type.replace('_', ' ')
-        })
-    
     return jsonify({
         'success': True,
         'summary': {
             'claims_processed': summary['claims_processed'],
             'alerts_generated': summary['alerts_generated'],
             'high_priority_alerts': summary['high_priority_alerts'],
+            'high_value_alerts': len(high_value_alerts),  # Count of >$25K alerts
             'outreach_initiated': summary['outreach_initiated'],
             'workflows_created': summary['workflows_created'],
             'total_potential_recovery': round(summary['total_potential_recovery'], 2)
         },
         'alerts_by_type': daily_report['alerts_by_type'],
         'top_alerts': top_alerts,
-        'red_flags': red_flags
+        'total_pages': (len(top_alerts) + 9) // 10  # 10 alerts per page
     })
 
 
