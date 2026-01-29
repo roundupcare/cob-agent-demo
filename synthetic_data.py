@@ -14,6 +14,47 @@ from data_models import (
 )
 
 
+# CARC Code Mapping for COB Issues
+# Source: https://www.wpc-edi.com/reference/codelists/healthcare/claim-adjustment-reason-codes/
+CARC_CODES = {
+    "MSP_VIOLATION": {
+        "code": "N657",
+        "description": "This claim/service is not payable under our service area. The claim must be filed to the patient's primary insurance.",
+        "category": "Medicare not primary"
+    },
+    "WRONG_PRIMARY": {
+        "code": "22",
+        "description": "This care may be covered by another payer per coordination of benefits.",
+        "category": "COB - Other coverage primary"
+    },
+    "COB_MISSING": {
+        "code": "CO-22",
+        "description": "This care may be covered by another payer per coordination of benefits.",
+        "category": "COB information needed"
+    },
+    "AUTO_LIABILITY": {
+        "code": "B15",
+        "description": "This service/procedure requires that you have a different type of provider/supplier.",
+        "category": "Service not covered - other payer responsible"
+    },
+    "WORKERS_COMP": {
+        "code": "109",
+        "description": "Claim/service not covered by this payer/contractor. You must send the claim/service to the correct payer/contractor.",
+        "category": "Wrong payer - WC responsible"
+    },
+    "COVERAGE_TERMINATED": {
+        "code": "26",
+        "description": "Expenses incurred after coverage terminated.",
+        "category": "Coverage inactive"
+    },
+    "SECONDARY_NOT_BILLED": {
+        "code": "OA-23",
+        "description": "Impact of prior payer(s) adjudication including payments and/or adjustments.",
+        "category": "Secondary payer coordination"
+    }
+}
+
+
 class SyntheticDataGenerator:
     """Generates synthetic healthcare data with COB red flags"""
     
@@ -70,9 +111,20 @@ class SyntheticDataGenerator:
         first_name = random.choice(self.first_names)
         last_name = random.choice(self.last_names)
         
-        # Age distribution
-        if scenario == "medicare_age":
-            age = random.randint(65, 85)
+        # Age distribution - MUST BE APPROPRIATE FOR SCENARIO
+        if scenario == "msp_violation":
+            # MSP only applies to Medicare patients (65+, or under 65 with disability/ESRD)
+            # For demo: 70% are working seniors (65-70), 30% are disabled under 65
+            if random.random() < 0.7:
+                age = random.randint(65, 70)  # Working senior
+            else:
+                age = random.randint(45, 64)  # Disabled, still working
+        elif scenario == "wrong_primary_order":
+            # Also Medicare scenario - same age logic
+            if random.random() < 0.7:
+                age = random.randint(65, 70)
+            else:
+                age = random.randint(45, 64)
         elif scenario == "dependent_aging_out":
             age = 26  # Critical age for dependent coverage
         else:
@@ -132,9 +184,14 @@ class SyntheticDataGenerator:
             ))
             
         elif scenario == "msp_violation":
-            # Medicare billed as primary when it should be secondary
+            # Medicare billed as primary when patient has other coverage (WRONG - MSP violation)
+            # Patient should have commercial insurance as primary, Medicare as secondary
             insurances.append(self._create_insurance(
-                InsuranceType.MEDICARE, base_date, None, True, 1  # WRONG - MSP violation
+                InsuranceType.MEDICARE, base_date, None, True, 1  # WRONG - billed as primary
+            ))
+            # Also add commercial (employer) insurance that should be primary
+            insurances.append(self._create_insurance(
+                InsuranceType.COMMERCIAL, base_date, None, False, 2  # Should be primary
             ))
             
         elif scenario == "dependent_aging_out":
@@ -291,6 +348,26 @@ class SyntheticDataGenerator:
         submission_date = service_date + timedelta(days=random.randint(1, 14))
         denial_date = submission_date + timedelta(days=random.randint(7, 30)) if status == ClaimStatus.DENIED else None
         
+        # Assign CARC code based on denial reason (from 835 remittance advice)
+        carc_code = None
+        rarc_code = None
+        if status == ClaimStatus.DENIED and denial_reason:
+            if denial_reason == DenialReason.MSP_VIOLATION:
+                carc_code = "N657"  # Medicare not primary
+                rarc_code = "M76"   # Missing/incomplete/invalid information
+            elif denial_reason == DenialReason.WRONG_PRIMARY:
+                carc_code = "22"    # COB - other payer may cover
+                rarc_code = "N30"   # Patient ineligible for this service
+            elif denial_reason == DenialReason.AUTO_LIABILITY:
+                carc_code = "B15"   # Service not covered by this payer
+                rarc_code = "N3"    # Missing/incomplete/invalid information
+            elif denial_reason == DenialReason.DEPENDENT_ELIGIBILITY:
+                carc_code = "26"    # Expenses after coverage terminated
+                rarc_code = "N30"   # Patient ineligible for this service
+            elif denial_reason == DenialReason.COB_MISSING:
+                carc_code = "CO-22" # COB information needed
+                rarc_code = "M76"   # Missing COB information
+        
         return Claim(
             claim_id=claim_id,
             patient_id=patient.patient_id,
@@ -307,6 +384,8 @@ class SyntheticDataGenerator:
             denial_date=denial_date,
             submission_date=submission_date,
             paid_amount=round(billed_amount * 0.7, 2) if status == ClaimStatus.PAID else 0.0,
+            carc_code=carc_code,
+            rarc_code=rarc_code,
             is_emergency=is_emergency,
             is_accident_related=is_accident,
             is_work_related=is_work_related,
