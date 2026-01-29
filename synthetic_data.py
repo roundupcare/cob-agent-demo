@@ -303,16 +303,17 @@ class SyntheticDataGenerator:
         patients = []
         claims = []
         
-        # Scenario distribution (intentionally high red flag rate for testing)
+        # Scenario distribution - designed for ~25% flag rate with good mix of all 8 types
+        # Percentages based on num_patients
         scenarios = [
-            ("normal", 30),
-            ("missing_secondary", 15),
-            ("wrong_primary_order", 15),
-            ("msp_violation", 10),
-            ("dependent_aging_out", 10),
-            ("dual_coverage", 10),
-            ("auto_accident", 5),
-            ("workers_comp", 5)
+            ("normal", int(num_patients * 0.75)),           # 75% normal (no flags)
+            ("missing_secondary", int(num_patients * 0.06)), # 6% - common issue
+            ("msp_violation", int(num_patients * 0.05)),     # 5% - common in 65+ patients
+            ("wrong_primary_order", int(num_patients * 0.04)), # 4% - coordination errors
+            ("dependent_aging_out", int(num_patients * 0.03)), # 3% - age 26 transitions
+            ("auto_accident", int(num_patients * 0.03)),     # 3% - liability issues
+            ("workers_comp", int(num_patients * 0.02)),      # 2% - work injuries
+            ("dual_coverage", int(num_patients * 0.02))      # 2% - missing secondary billing
         ]
         
         claim_counter = 1
