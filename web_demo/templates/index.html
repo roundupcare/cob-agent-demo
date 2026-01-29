@@ -490,6 +490,7 @@
                         <span>📋 ${alert.claim.id}</span>
                         <span>📅 ${alert.claim.service_date}</span>
                         <span>💯 ${alert.confidence}% confidence</span>
+                        ${alert.claim.carc_code ? `<span style="background: #fed7d7; padding: 2px 8px; border-radius: 4px; font-weight: 600;">CARC ${alert.claim.carc_code}</span>` : ''}
                     </div>
                     <div style="color: #4a5568; font-size: 14px; margin-bottom: 8px;">
                         <strong>Issue:</strong> ${alert.description}
@@ -497,6 +498,15 @@
                     <div style="color: #2d3748; font-size: 14px;">
                         <strong>Action:</strong> ${alert.recommended_action}
                     </div>
+                    ${alert.claim.carc_code ? `
+                    <div style="margin-top: 10px; padding: 10px; background: #edf2f7; border-radius: 6px; font-size: 13px; color: #4a5568;">
+                        <strong>📄 Payer Response:</strong> CARC ${alert.claim.carc_code} detected in 835 remittance advice
+                    </div>
+                    ` : `
+                    <div style="margin-top: 10px; padding: 10px; background: #c6f6d5; border-radius: 6px; font-size: 13px; color: #22543d;">
+                        <strong>🎯 Proactive Detection:</strong> Flagged before submission - preventing denial
+                    </div>
+                    `}
                 `;
                 topAlerts.appendChild(card);
             });
