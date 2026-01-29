@@ -290,10 +290,10 @@ def api_stats():
 
 
 if __name__ == '__main__':
-    # Initialize with default data
+    # Initialize with default data - 500 patients for realistic demo
     print("Initializing COB Agent Web Demo...")
-    initialize_demo(100, 42)
-    print("Demo initialized with 100 patients")
+    initialize_demo(500, 42)
+    print("Demo initialized with 500 patients")
     
     # Run the app
     app.run(debug=True, host='0.0.0.0', port=5000)
