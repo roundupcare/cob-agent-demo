@@ -1,0 +1,276 @@
+"""
+Sightline Health - COB Agent Web Demo
+Flask application for browser-based demonstration
+"""
+
+from flask import Flask, render_template, jsonify, request
+import sys
+import os
+
+# Add parent directory to path to import our modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from synthetic_data import SyntheticDataGenerator
+from cob_agent import COBAgent
+from data_models import Patient, Claim
+
+app = Flask(__name__)
+
+# Global variables to store demo state
+demo_data = {
+    'patients': [],
+    'claims': [],
+    'results': None,
+    'agent': None
+}
+
+
+def initialize_demo(num_patients=100, seed=42):
+    """Initialize the demo with synthetic data"""
+    global demo_data
+    
+    # Generate data
+    generator = SyntheticDataGenerator(seed=seed)
+    patients_list, claims_list = generator.generate_dataset(num_patients=num_patients)
+    
+    # Store data
+    demo_data['patients'] = patients_list
+    demo_data['claims'] = claims_list
+    demo_data['patients_dict'] = {p.patient_id: p for p in patients_list}
+    
+    # Initialize agent
+    demo_data['agent'] = COBAgent()
+    
+    return len(patients_list), len(claims_list)
+
+
+def run_analysis():
+    """Run the COB agent analysis"""
+    global demo_data
+    
+    if not demo_data['agent']:
+        initialize_demo()
+    
+    # Process claims
+    results = demo_data['agent'].process_claims_batch(
+        demo_data['claims'],
+        demo_data['patients_dict']
+    )
+    
+    demo_data['results'] = results
+    return results
+
+
+@app.route('/')
+def index():
+    """Main demo page"""
+    return render_template('index.html')
+
+
+@app.route('/api/initialize', methods=['POST'])
+def api_initialize():
+    """Initialize demo with specified parameters"""
+    data = request.get_json()
+    num_patients = data.get('num_patients', 100)
+    seed = data.get('seed', 42)
+    
+    num_patients_created, num_claims_created = initialize_demo(num_patients, seed)
+    
+    return jsonify({
+        'success': True,
+        'num_patients': num_patients_created,
+        'num_claims': num_claims_created,
+        'message': f'Generated {num_patients_created} patients with {num_claims_created} claims'
+    })
+
+
+@app.route('/api/analyze', methods=['POST'])
+def api_analyze():
+    """Run the COB analysis"""
+    results = run_analysis()
+    
+    # Convert results to JSON-serializable format
+    summary = results['processing_summary']
+    daily_report = results['daily_report']
+    
+    # Top alerts
+    top_alerts = []
+    for alert in results['top_priority_alerts'][:10]:
+        patient = demo_data['patients_dict'][alert.patient_id]
+        claim = next(c for c in demo_data['claims'] if c.claim_id == alert.claim_id)
+        
+        top_alerts.append({
+            'alert_id': alert.alert_id,
+            'alert_type': alert.alert_type,
+            'severity': alert.severity,
+            'confidence': round(alert.confidence_score * 100, 1),
+            'estimated_recovery': round(alert.estimated_recovery or 0, 2),
+            'description': alert.description,
+            'recommended_action': alert.recommended_action,
+            'patient': {
+                'id': patient.patient_id,
+                'name': f"{patient.first_name} {patient.last_name}",
+                'age': patient.get_age(),
+                'mrn': patient.mrn
+            },
+            'claim': {
+                'id': claim.claim_id,
+                'service_date': str(claim.service_date),
+                'billed_amount': round(claim.billed_amount, 2),
+                'status': claim.claim_status.value
+            }
+        })
+    
+    # Red flag accounts
+    red_flag_patients = {}
+    for alert in results['top_priority_alerts']:
+        if alert.severity == "HIGH":
+            if alert.patient_id not in red_flag_patients:
+                patient = demo_data['patients_dict'][alert.patient_id]
+                red_flag_patients[alert.patient_id] = {
+                    'patient': patient,
+                    'alerts': [],
+                    'total_recovery': 0
+                }
+            red_flag_patients[alert.patient_id]['alerts'].append(alert)
+            red_flag_patients[alert.patient_id]['total_recovery'] += (alert.estimated_recovery or 0)
+    
+    # Sort by total recovery
+    sorted_red_flags = sorted(
+        red_flag_patients.items(),
+        key=lambda x: x[1]['total_recovery'],
+        reverse=True
+    )[:15]
+    
+    red_flags = []
+    for patient_id, data in sorted_red_flags:
+        patient = data['patient']
+        red_flags.append({
+            'patient_id': patient_id,
+            'patient_name': f"{patient.first_name} {patient.last_name}",
+            'mrn': patient.mrn,
+            'alert_count': len(data['alerts']),
+            'total_recovery': round(data['total_recovery'], 2),
+            'top_issue': data['alerts'][0].alert_type.replace('_', ' ')
+        })
+    
+    return jsonify({
+        'success': True,
+        'summary': {
+            'claims_processed': summary['claims_processed'],
+            'alerts_generated': summary['alerts_generated'],
+            'high_priority_alerts': summary['high_priority_alerts'],
+            'outreach_initiated': summary['outreach_initiated'],
+            'workflows_created': summary['workflows_created'],
+            'total_potential_recovery': round(summary['total_potential_recovery'], 2)
+        },
+        'alerts_by_type': daily_report['alerts_by_type'],
+        'top_alerts': top_alerts,
+        'red_flags': red_flags
+    })
+
+
+@app.route('/api/alert/<alert_id>')
+def api_get_alert(alert_id):
+    """Get detailed information about a specific alert"""
+    if not demo_data['results']:
+        return jsonify({'success': False, 'error': 'No analysis run yet'})
+    
+    # Find the alert
+    alert = None
+    for a in demo_data['results']['top_priority_alerts']:
+        if a.alert_id == alert_id:
+            alert = a
+            break
+    
+    if not alert:
+        return jsonify({'success': False, 'error': 'Alert not found'})
+    
+    # Get patient and claim
+    patient = demo_data['patients_dict'][alert.patient_id]
+    claim = next(c for c in demo_data['claims'] if c.claim_id == alert.claim_id)
+    
+    # Get workflow if exists
+    workflow = None
+    for w in demo_data['agent'].resolution_agent.workflows:
+        if w.alert_id == alert_id:
+            workflow = demo_data['agent'].resolution_agent.get_workflow_status(w.workflow_id)
+            break
+    
+    # Get outreach if exists
+    outreach = None
+    for o in demo_data['agent'].outreach_agent.outreach_attempts:
+        if o.alert_id == alert_id:
+            outreach = {
+                'attempt_id': o.attempt_id,
+                'channel': o.channel,
+                'timestamp': str(o.timestamp),
+                'message': o.message_sent
+            }
+            break
+    
+    return jsonify({
+        'success': True,
+        'alert': {
+            'id': alert.alert_id,
+            'type': alert.alert_type,
+            'severity': alert.severity,
+            'confidence': round(alert.confidence_score * 100, 1),
+            'estimated_recovery': round(alert.estimated_recovery or 0, 2),
+            'description': alert.description,
+            'recommended_action': alert.recommended_action,
+            'data_points': alert.data_points
+        },
+        'patient': {
+            'id': patient.patient_id,
+            'mrn': patient.mrn,
+            'name': f"{patient.first_name} {patient.last_name}",
+            'dob': str(patient.date_of_birth),
+            'age': patient.get_age(),
+            'employment': patient.employment_status,
+            'insurance_count': len(patient.insurance_coverage)
+        },
+        'claim': {
+            'id': claim.claim_id,
+            'service_date': str(claim.service_date),
+            'billed_amount': round(claim.billed_amount, 2),
+            'paid_amount': round(claim.paid_amount, 2),
+            'status': claim.claim_status.value,
+            'diagnosis_codes': claim.diagnosis_codes,
+            'is_emergency': claim.is_emergency,
+            'is_accident': claim.is_accident_related,
+            'is_work_related': claim.is_work_related
+        },
+        'workflow': workflow,
+        'outreach': outreach
+    })
+
+
+@app.route('/api/stats')
+def api_stats():
+    """Get current demo statistics"""
+    if not demo_data['results']:
+        return jsonify({
+            'success': False,
+            'initialized': len(demo_data['patients']) > 0,
+            'analyzed': False
+        })
+    
+    dashboard = demo_data['agent'].get_dashboard_metrics()
+    
+    return jsonify({
+        'success': True,
+        'initialized': True,
+        'analyzed': True,
+        'dashboard': dashboard
+    })
+
+
+if __name__ == '__main__':
+    # Initialize with default data
+    print("Initializing COB Agent Web Demo...")
+    initialize_demo(100, 42)
+    print("Demo initialized with 100 patients")
+    
+    # Run the app
+    app.run(debug=True, host='0.0.0.0', port=5000)
