@@ -134,7 +134,13 @@ class COBDetectionEngine:
         return alerts
     
     def _check_msp_violation(self, claim: Claim, patient: Patient) -> Optional[COBAlert]:
-        """Check for Medicare Secondary Payer violations"""
+        """Check for Medicare Secondary Payer violations
+        
+        MSP Rules:
+        - If patient has group health plan through current employment → That's primary, Medicare secondary
+        - If patient is 65+ and working with employer coverage → Employer primary if 20+ employees
+        - If patient is under 65 with Medicare (disability/ESRD) and working → Employer primary
+        """
         
         # Get primary insurance from claim
         if not claim.primary_insurance_id:
@@ -146,22 +152,56 @@ class COBDetectionEngine:
             None
         )
         
+        # Only flag if Medicare was actually billed as primary
         if not primary_ins or primary_ins.insurance_type != InsuranceType.MEDICARE:
             return None
         
+        # Get patient age and employment
+        patient_age = patient.get_age(claim.service_date)
+        is_employed = patient.employment_status == "Employed"
+        
         # Check if patient has other active coverage
         active_insurance = patient.get_active_insurance(claim.service_date)
-        has_other_coverage = any(
+        has_commercial = any(
             ins.insurance_type in [InsuranceType.COMMERCIAL, InsuranceType.MEDICARE_ADVANTAGE]
             for ins in active_insurance
         )
         
-        # Check if patient is under 65 and employed (working beneficiary)
-        patient_age = patient.get_age(claim.service_date)
-        is_working_age = patient_age < 65 and patient.employment_status == "Employed"
+        # MSP VIOLATION CONDITIONS:
+        # 1. Patient has both Medicare AND commercial insurance → Commercial should be primary
+        # 2. Patient is under 65 with Medicare (disability) AND employed → Should have employer coverage
+        # 3. Patient is 65-70 and employed → If employer has 20+ employees, employer coverage is primary
         
-        if has_other_coverage or is_working_age:
-            confidence = 0.95 if has_other_coverage else 0.75
+        should_flag = False
+        reason = ""
+        confidence = 0.0
+        
+        if has_commercial and is_employed:
+            # Has both coverages - commercial should definitely be primary
+            should_flag = True
+            reason = f"Patient has active commercial insurance (employer) that should be primary. Age: {patient_age}, Employed."
+            confidence = 0.95
+        elif has_commercial:
+            # Has commercial but not employed - still should be primary (spouse, retiree, etc)
+            should_flag = True  
+            reason = f"Patient has active commercial insurance that should be primary. Age: {patient_age}."
+            confidence = 0.90
+        elif patient_age < 65 and is_employed:
+            # Under 65 with Medicare (disability) and working - should have employer coverage
+            should_flag = True
+            reason = f"Patient under 65 with Medicare (likely disabled) is employed. Employer coverage should be primary. Age: {patient_age}."
+            confidence = 0.80
+        elif patient_age >= 65 and patient_age <= 70 and is_employed:
+            # Working senior - likely has employer coverage that should be primary
+            should_flag = True
+            reason = f"Working senior (age {patient_age}) likely has employer coverage that should be primary."
+            confidence = 0.75
+        
+        if should_flag:
+            # Build description with CARC code if claim was denied
+            description = reason
+            if claim.carc_code:
+                description += f" Payer denial code: {claim.carc_code}."
             
             return COBAlert(
                 alert_id=None,
@@ -171,13 +211,16 @@ class COBDetectionEngine:
                 severity="HIGH",
                 confidence_score=confidence,
                 detected_date=date.today(),
-                description=f"Medicare billed as primary when patient has other coverage. "
-                           f"Patient age: {patient_age}, Employment: {patient.employment_status}",
-                recommended_action="Verify other insurance coverage and rebill with Medicare as secondary",
+                description=description,
+                recommended_action="Verify employer/commercial insurance coverage and rebill with Medicare as secondary",
                 data_points={
                     "patient_age": patient_age,
                     "employment_status": patient.employment_status,
-                    "other_coverage_count": len([i for i in active_insurance if i.insurance_type != InsuranceType.MEDICARE])
+                    "has_commercial_insurance": has_commercial,
+                    "commercial_count": len([i for i in active_insurance if i.insurance_type in [InsuranceType.COMMERCIAL, InsuranceType.MEDICARE_ADVANTAGE]]),
+                    "carc_code": claim.carc_code,
+                    "claim_status": claim.claim_status.value,
+                    "detection_method": "835 Remittance Analysis" if claim.carc_code else "Proactive Pre-Submission"
                 },
                 estimated_recovery=claim.billed_amount * 0.8  # Typically recover most of claim
             )
