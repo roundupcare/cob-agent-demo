@@ -423,7 +423,7 @@
             
             try {
                 // Run analysis
-                status.textContent = 'Analyzing 100 patients...';
+                status.textContent = 'Analyzing 500 patients...';
                 const response = await fetch('/api/analyze', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'}
@@ -527,7 +527,7 @@
         
         // Initialize on load
         window.onload = function() {
-            document.getElementById('status').textContent = 'Ready to analyze 100 patients with COB scenarios';
+            document.getElementById('status').textContent = 'Ready to analyze 500 patients with COB scenarios';
         };
     </script>
 </body>
