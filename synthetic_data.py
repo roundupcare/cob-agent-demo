@@ -228,11 +228,27 @@ class SyntheticDataGenerator:
         else:
             dx_codes = random.sample(self.diagnosis_codes["routine"], 2)
         
-        # Billed amount
+        # Billed amount - VARIED to ensure mix in top 10 alerts (not just auto accidents)
         if is_emergency:
-            billed_amount = random.uniform(15000, 75000)
+            billed_amount = random.uniform(25000, 85000)
         elif is_accident or is_work_related:
-            billed_amount = random.uniform(8000, 35000)
+            # Auto/WC: high but not dominant
+            billed_amount = random.uniform(15000, 50000)
+        elif scenario == "msp_violation":
+            # MSP: Increase significantly - often expensive procedures
+            billed_amount = random.uniform(20000, 70000)
+        elif scenario == "wrong_primary_order":
+            # Wrong primary: Can be expensive specialty care
+            billed_amount = random.uniform(15000, 55000)
+        elif scenario == "dependent_aging_out":
+            # Age-out: Often urgent care or procedures
+            billed_amount = random.uniform(18000, 60000)
+        elif scenario == "missing_secondary":
+            # Missing secondary: Wide range
+            billed_amount = random.uniform(5000, 35000)
+        elif scenario == "dual_coverage":
+            # Dual coverage: Medium to high
+            billed_amount = random.uniform(10000, 40000)
         else:
             billed_amount = random.uniform(500, 5000)
         
@@ -303,17 +319,17 @@ class SyntheticDataGenerator:
         patients = []
         claims = []
         
-        # Scenario distribution - designed for ~25% flag rate with good mix of all 8 types
-        # Percentages based on num_patients
+        # Scenario distribution - realistic 20% flag rate with VARIETY across all 8 types
+        # Auto/WC reduced to prevent dominance in top 10 alerts
         scenarios = [
-            ("normal", int(num_patients * 0.75)),           # 75% normal (no flags)
-            ("missing_secondary", int(num_patients * 0.06)), # 6% - common issue
-            ("msp_violation", int(num_patients * 0.05)),     # 5% - common in 65+ patients
+            ("normal", int(num_patients * 0.80)),           # 80% normal (no flags)
+            ("missing_secondary", int(num_patients * 0.06)), # 6% - most common issue
+            ("msp_violation", int(num_patients * 0.05)),     # 5% - common in Medicare
             ("wrong_primary_order", int(num_patients * 0.04)), # 4% - coordination errors
-            ("dependent_aging_out", int(num_patients * 0.03)), # 3% - age 26 transitions
-            ("auto_accident", int(num_patients * 0.03)),     # 3% - liability issues
-            ("workers_comp", int(num_patients * 0.02)),      # 2% - work injuries
-            ("dual_coverage", int(num_patients * 0.02))      # 2% - missing secondary billing
+            ("dependent_aging_out", int(num_patients * 0.02)), # 2% - age 26 transitions
+            ("dual_coverage", int(num_patients * 0.015)),     # 1.5% - secondary not billed
+            ("auto_accident", int(num_patients * 0.005)),     # 0.5% - rare but high value
+            ("workers_comp", int(num_patients * 0.005))       # 0.5% - rare but high value
         ]
         
         claim_counter = 1
