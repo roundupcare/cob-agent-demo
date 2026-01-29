@@ -4,7 +4,7 @@ Upload CSV, analyze, and export report
 """
 
 from flask import Flask, render_template, request, jsonify, send_file
-import pandas as pd
+import csv
 from datetime import datetime
 from collections import defaultdict
 import io
@@ -38,44 +38,54 @@ class COBAnalyzer:
     
     def analyze_csv(self, file_content):
         """Main analysis function"""
-        # Read CSV from uploaded file
-        df = pd.read_csv(io.StringIO(file_content))
-        self.results['total_records'] = len(df)
+        # Read CSV using built-in csv module
+        csv_reader = csv.DictReader(io.StringIO(file_content))
+        rows = list(csv_reader)
+        self.results['total_records'] = len(rows)
         
         # Analyze each record
-        for idx, row in df.iterrows():
+        for idx, row in enumerate(rows):
             self._analyze_record(row, idx)
         
         return self.results
     
     def _analyze_record(self, row, idx):
         """Analyze single record"""
-        has_carc = pd.notna(row.get('Denial Code (CARC)', '')) and str(row.get('Denial Code (CARC)', '')).strip() != ''
+        # Safe get with default empty string
+        def safe_get(key, default=''):
+            val = row.get(key, default)
+            return val if val and str(val).strip() else default
+        
+        carc = safe_get('Denial Code (CARC)')
+        has_carc = bool(carc)
         
         if has_carc:
             # REACTIVE
             self.results['reactive_count'] += 1
-            carc_code = str(row['Denial Code (CARC)']).strip()
-            issue_type = self._map_carc_to_issue(carc_code)
+            issue_type = self._map_carc_to_issue(carc)
+            
+            denial_amt = safe_get('Denial Amount')
+            ins_bal = safe_get('Insurance Balance')
+            pat_bal = safe_get('Patient Balance')
             
             flagged_record = {
                 'row_number': idx + 2,
-                'name': row.get('Name', ''),
-                'dob': row.get('DOB', ''),
-                'age': self._calculate_age(row.get('DOB', '')),
-                'insurance': row.get('Insurance', ''),
-                'insurance_id': row.get('Insurance ID', ''),
-                'account_id': row.get('Account ID', ''),
+                'name': safe_get('Name'),
+                'dob': safe_get('DOB'),
+                'age': self._calculate_age(safe_get('DOB')),
+                'insurance': safe_get('Insurance'),
+                'insurance_id': safe_get('Insurance ID'),
+                'account_id': safe_get('Account ID'),
                 'detection_method': 'Reactive (835 Remittance)',
                 'issue_type': issue_type,
-                'carc_code': carc_code,
-                'rarc_code': str(row.get('Remark Code (RARC)', '')).strip() if pd.notna(row.get('Remark Code (RARC)', '')) else '',
-                'denial_amount': float(row.get('Denial Amount', 0)) if pd.notna(row.get('Denial Amount', '')) and row.get('Denial Amount', '') != '' else 0,
-                'insurance_balance': float(row.get('Insurance Balance', 0)) if pd.notna(row.get('Insurance Balance', '')) else 0,
-                'patient_balance': float(row.get('Patient Balance', 0)) if pd.notna(row.get('Patient Balance', '')) else 0,
-                'facility': row.get('Facility Location', ''),
+                'carc_code': carc,
+                'rarc_code': safe_get('Remark Code (RARC)'),
+                'denial_amount': float(denial_amt) if denial_amt else 0,
+                'insurance_balance': float(ins_bal) if ins_bal else 0,
+                'patient_balance': float(pat_bal) if pat_bal else 0,
+                'facility': safe_get('Facility Location'),
                 'recovery_potential': self._calculate_recovery(row, True),
-                'recommended_action': self._get_action_for_carc(carc_code),
+                'recommended_action': self._get_action_for_carc(carc),
                 'priority': self._calculate_priority(row, True)
             }
         else:
@@ -86,22 +96,25 @@ class COBAnalyzer:
             
             self.results['proactive_count'] += 1
             
+            ins_bal = safe_get('Insurance Balance')
+            pat_bal = safe_get('Patient Balance')
+            
             flagged_record = {
                 'row_number': idx + 2,
-                'name': row.get('Name', ''),
-                'dob': row.get('DOB', ''),
-                'age': self._calculate_age(row.get('DOB', '')),
-                'insurance': row.get('Insurance', ''),
-                'insurance_id': row.get('Insurance ID', ''),
-                'account_id': row.get('Account ID', ''),
+                'name': safe_get('Name'),
+                'dob': safe_get('DOB'),
+                'age': self._calculate_age(safe_get('DOB')),
+                'insurance': safe_get('Insurance'),
+                'insurance_id': safe_get('Insurance ID'),
+                'account_id': safe_get('Account ID'),
                 'detection_method': 'Proactive (Pre-Submission)',
                 'issue_type': issue_type,
                 'carc_code': '',
                 'rarc_code': '',
                 'denial_amount': 0,
-                'insurance_balance': float(row.get('Insurance Balance', 0)) if pd.notna(row.get('Insurance Balance', '')) else 0,
-                'patient_balance': float(row.get('Patient Balance', 0)) if pd.notna(row.get('Patient Balance', '')) else 0,
-                'facility': row.get('Facility Location', ''),
+                'insurance_balance': float(ins_bal) if ins_bal else 0,
+                'patient_balance': float(pat_bal) if pat_bal else 0,
+                'facility': safe_get('Facility Location'),
                 'recovery_potential': self._calculate_recovery(row, False),
                 'recommended_action': self._get_proactive_action(issue_type, row),
                 'priority': self._calculate_priority(row, False)
@@ -142,9 +155,14 @@ class COBAnalyzer:
         """Detect proactive COB issues"""
         insurance = str(row.get('Insurance', '')).lower()
         age = self._calculate_age(row.get('DOB', ''))
-        patient_balance = float(row.get('Patient Balance', 0)) if pd.notna(row.get('Patient Balance', '')) else 0
-        insurance_balance = float(row.get('Insurance Balance', 0)) if pd.notna(row.get('Insurance Balance', '')) else 0
+        
+        patient_balance = row.get('Patient Balance', '')
+        insurance_balance = row.get('Insurance Balance', '')
+        
+        patient_balance = float(patient_balance) if patient_balance else 0
+        insurance_balance = float(insurance_balance) if insurance_balance else 0
         total_charges = patient_balance + insurance_balance
+        
         facility = str(row.get('Facility Location', '')).lower()
         
         # MSP VIOLATION
@@ -174,10 +192,12 @@ class COBAnalyzer:
     def _calculate_recovery(self, row, is_reactive):
         """Estimate recovery potential"""
         if is_reactive:
-            denial_amount = float(row.get('Denial Amount', 0)) if pd.notna(row.get('Denial Amount', '')) and row.get('Denial Amount', '') != '' else 0
+            denial_amount = row.get('Denial Amount', '')
+            denial_amount = float(denial_amount) if denial_amount else 0
             return denial_amount * 0.75
         else:
-            insurance_balance = float(row.get('Insurance Balance', 0)) if pd.notna(row.get('Insurance Balance', '')) else 0
+            insurance_balance = row.get('Insurance Balance', '')
+            insurance_balance = float(insurance_balance) if insurance_balance else 0
             return insurance_balance * 0.65
     
     def _calculate_priority(self, row, is_reactive):
@@ -280,18 +300,21 @@ def download_report():
     if not results['flagged_records']:
         return "No flagged records to export", 400
     
-    # Create DataFrame
-    df = pd.DataFrame(results['flagged_records'])
-    
     # Sort by priority and recovery
     priority_order = {'HIGH': 0, 'MEDIUM': 1, 'LOW': 2}
-    df['_priority_sort'] = df['priority'].map(priority_order)
-    df = df.sort_values(['_priority_sort', 'recovery_potential'], ascending=[True, False])
-    df = df.drop('_priority_sort', axis=1)
+    sorted_records = sorted(
+        results['flagged_records'],
+        key=lambda x: (priority_order.get(x['priority'], 3), -x['recovery_potential'])
+    )
     
-    # Create CSV in memory
+    # Create CSV in memory using csv.DictWriter
     output = io.StringIO()
-    df.to_csv(output, index=False)
+    if sorted_records:
+        fieldnames = sorted_records[0].keys()
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(sorted_records)
+    
     output.seek(0)
     
     # Convert to bytes for download
@@ -315,8 +338,9 @@ if __name__ == '__main__':
     print("COB AGENT - WEB ANALYSIS TOOL")
     print("="*80)
     print("\nStarting server...")
-    print("Open in browser: http://localhost:5001")
     print("\nReady to analyze CSV files!")
     print("="*80 + "\n")
     
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    # Use PORT from environment variable for Render, default to 5001 for local
+    port = int(os.environ.get('PORT', 5001))
+    app.run(debug=False, host='0.0.0.0', port=port)
