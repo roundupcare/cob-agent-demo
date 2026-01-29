@@ -119,6 +119,8 @@ class Claim:
     submission_date: date
     paid_amount: float = 0.0
     notes: str = ""
+    carc_code: Optional[str] = None  # Claim Adjustment Reason Code from payer
+    rarc_code: Optional[str] = None  # Remittance Advice Remark Code
     
     # Red flag indicators
     is_emergency: bool = False
