@@ -87,19 +87,25 @@ class PredictiveAgent:
         return all_alerts
     
     def prioritize_alerts(self, alerts: List[COBAlert]) -> List[COBAlert]:
-        """Prioritize alerts by potential recovery value and urgency"""
+        """Prioritize alerts by potential recovery value and urgency with variety"""
         
         def priority_score(alert: COBAlert) -> float:
             severity_weight = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
             recovery = alert.estimated_recovery or 0
             
-            # Score = (severity * confidence * recovery)
-            score = (
+            # Score = (severity * confidence * recovery) with variety factor
+            base_score = (
                 severity_weight[alert.severity] * 
                 alert.confidence_score * 
                 (recovery / 1000)  # Normalize recovery
             )
-            return score
+            
+            # Add small random factor (0-10%) to prevent identical scenarios from clustering
+            # This ensures variety in top alerts without sacrificing true prioritization
+            import random
+            variety_factor = random.uniform(0.95, 1.05)
+            
+            return base_score * variety_factor
         
         return sorted(alerts, key=priority_score, reverse=True)
     
