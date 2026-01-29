@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>COB Agent - CSV Analysis</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            color: #2d3748;
+            font-size: 36px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: #718096;
+            font-size: 18px;
+        }
+        
+        .upload-section {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            margin-bottom: 30px;
+        }
+        
+        .upload-area {
+            border: 3px dashed #cbd5e0;
+            border-radius: 12px;
+            padding: 60px;
+            text-align: center;
+            background: #f7fafc;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .upload-area:hover {
+            border-color: #667eea;
+            background: #edf2f7;
+        }
+        
+        .upload-area.dragging {
+            border-color: #667eea;
+            background: #e6f0ff;
+        }
+        
+        .upload-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+        
+        .upload-text {
+            font-size: 20px;
+            color: #2d3748;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .upload-hint {
+            color: #718096;
+            font-size: 14px;
+        }
+        
+        #fileInput {
+            display: none;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 16px 40px;
+            font-size: 18px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin-top: 20px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        #results {
+            display: none;
+        }
+        
+        #results.show {
+            display: block;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+        }
+        
+        .stat-card h3 {
+            color: #718096;
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+        
+        .stat-card .value {
+            color: #2d3748;
+            font-size: 42px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+        
+        .stat-card .label {
+            color: #a0aec0;
+            font-size: 14px;
+        }
+        
+        .stat-card.highlight {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .stat-card.highlight h3,
+        .stat-card.highlight .value,
+        .stat-card.highlight .label {
+            color: white;
+        }
+        
+        .content-section {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            margin-bottom: 30px;
+        }
+        
+        .content-section h2 {
+            color: #2d3748;
+            font-size: 24px;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        
+        .issue-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+        }
+        
+        .issue-item {
+            background: #f7fafc;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .issue-item .count {
+            font-size: 32px;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        
+        .issue-item .name {
+            color: #4a5568;
+            font-size: 14px;
+        }
+        
+        .spinner {
+            border: 4px solid #e2e8f0;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .download-btn {
+            background: #48bb78;
+            color: white;
+            text-decoration: none;
+            padding: 16px 40px;
+            border-radius: 8px;
+            font-weight: 600;
+            display: inline-block;
+            margin-top: 20px;
+        }
+        
+        .download-btn:hover {
+            background: #38a169;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🏥 COB Agent - CSV Analysis</h1>
+            <p>Upload hospital claims CSV to analyze COB issues</p>
+        </div>
+        
+        <!-- Upload Section -->
+        <div class="upload-section">
+            <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+                <div class="upload-icon">📊</div>
+                <div class="upload-text">Click to upload or drag & drop</div>
+                <div class="upload-hint">CSV files only (max 16MB)</div>
+            </div>
+            <input type="file" id="fileInput" accept=".csv" onchange="handleFileSelect(event)">
+            <div id="status" style="text-align: center; margin-top: 20px; color: #718096;"></div>
+        </div>
+        
+        <!-- Results Section -->
+        <div id="results">
+            <!-- Stats Grid -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Records Analyzed</h3>
+                    <div class="value" id="totalRecords">0</div>
+                    <div class="label">Total claims processed</div>
+                </div>
+                
+                <div class="stat-card">
+                    <h3>Issues Flagged</h3>
+                    <div class="value" id="totalFlagged">0</div>
+                    <div class="label">COB issues detected</div>
+                </div>
+                
+                <div class="stat-card">
+                    <h3>Reactive</h3>
+                    <div class="value" id="reactiveCount">0</div>
+                    <div class="label">With CARC codes (835 parsing)</div>
+                </div>
+                
+                <div class="stat-card">
+                    <h3>Proactive</h3>
+                    <div class="value" id="proactiveCount">0</div>
+                    <div class="label">Pre-submission detections</div>
+                </div>
+                
+                <div class="stat-card highlight">
+                    <h3>Recovery Potential</h3>
+                    <div class="value" id="totalRecovery">$0</div>
+                    <div class="label">Total estimated recovery</div>
+                </div>
+                
+                <div class="stat-card">
+                    <h3>Average per Flag</h3>
+                    <div class="value" id="avgRecovery">$0</div>
+                    <div class="label">Average recovery amount</div>
+                </div>
+            </div>
+            
+            <!-- Priority Breakdown -->
+            <div class="content-section">
+                <h2>🎯 Priority Breakdown</h2>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
+                    <div style="text-align: center; padding: 20px; background: #fed7d7; border-radius: 8px;">
+                        <div style="font-size: 36px; font-weight: 700; color: #c53030;" id="highPriority">0</div>
+                        <div style="color: #742a2a; font-weight: 600;">HIGH (>$25K)</div>
+                    </div>
+                    <div style="text-align: center; padding: 20px; background: #feebc8; border-radius: 8px;">
+                        <div style="font-size: 36px; font-weight: 700; color: #c05621;" id="mediumPriority">0</div>
+                        <div style="color: #7c2d12; font-weight: 600;">MEDIUM ($10-25K)</div>
+                    </div>
+                    <div style="text-align: center; padding: 20px; background: #c6f6d5; border-radius: 8px;">
+                        <div style="font-size: 36px; font-weight: 700; color: #22543d;" id="lowPriority">0</div>
+                        <div style="color: #22543d; font-weight: 600;">LOW (<$10K)</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Issue Types -->
+            <div class="content-section">
+                <h2>📋 Issues by Type</h2>
+                <div class="issue-grid" id="issueGrid"></div>
+            </div>
+            
+            <!-- Top Payers -->
+            <div class="content-section">
+                <h2>🏢 Top Payers with Issues</h2>
+                <div class="issue-grid" id="payerGrid"></div>
+            </div>
+            
+            <!-- Download Button -->
+            <div class="content-section" style="text-align: center;">
+                <h2>📥 Download Detailed Report</h2>
+                <p style="color: #718096; margin-bottom: 20px;">
+                    Export full analysis with all flagged records, sorted by priority and recovery potential
+                </p>
+                <a href="/download" class="download-btn">Download CSV Report</a>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(amount);
+        }
+        
+        // Drag and drop
+        const uploadArea = document.getElementById('uploadArea');
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragging');
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragging');
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragging');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+        
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                handleFile(file);
+            }
+        }
+        
+        async function handleFile(file) {
+            const status = document.getElementById('status');
+            const results = document.getElementById('results');
+            
+            results.classList.remove('show');
+            status.innerHTML = '<div class="spinner"></div><p>Analyzing ' + file.name + '...</p>';
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayResults(data.summary);
+                    status.innerHTML = '<p style="color: #48bb78; font-weight: 600;">✓ Analysis complete!</p>';
+                    results.classList.add('show');
+                } else {
+                    status.innerHTML = '<p style="color: #f56565; font-weight: 600;">✗ Error: ' + data.error + '</p>';
+                }
+            } catch (error) {
+                status.innerHTML = '<p style="color: #f56565; font-weight: 600;">✗ Error: ' + error.message + '</p>';
+            }
+        }
+        
+        function displayResults(summary) {
+            // Stats
+            document.getElementById('totalRecords').textContent = summary.total_records.toLocaleString();
+            document.getElementById('totalFlagged').textContent = summary.total_flagged.toLocaleString();
+            document.getElementById('reactiveCount').textContent = summary.reactive_count.toLocaleString();
+            document.getElementById('proactiveCount').textContent = summary.proactive_count.toLocaleString();
+            document.getElementById('totalRecovery').textContent = formatCurrency(summary.total_recovery);
+            document.getElementById('avgRecovery').textContent = formatCurrency(summary.avg_recovery);
+            
+            // Priority
+            document.getElementById('highPriority').textContent = summary.high_priority.toLocaleString();
+            document.getElementById('mediumPriority').textContent = summary.medium_priority.toLocaleString();
+            document.getElementById('lowPriority').textContent = summary.low_priority.toLocaleString();
+            
+            // Issue types
+            const issueGrid = document.getElementById('issueGrid');
+            issueGrid.innerHTML = '';
+            for (const [type, count] of Object.entries(summary.by_issue_type)) {
+                const item = document.createElement('div');
+                item.className = 'issue-item';
+                item.innerHTML = `
+                    <div class="count">${count}</div>
+                    <div class="name">${type}</div>
+                `;
+                issueGrid.appendChild(item);
+            }
+            
+            // Payers
+            const payerGrid = document.getElementById('payerGrid');
+            payerGrid.innerHTML = '';
+            for (const [payer, count] of Object.entries(summary.top_payers)) {
+                const item = document.createElement('div');
+                item.className = 'issue-item';
+                item.innerHTML = `
+                    <div class="count">${count}</div>
+                    <div class="name">${payer}</div>
+                `;
+                payerGrid.appendChild(item);
+            }
+        }
+    </script>
+</body>
+</html>
