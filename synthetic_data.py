@@ -315,17 +315,17 @@ class SyntheticDataGenerator:
         if scenario == "dependent_aging_out":
             # Claim filed after coverage terminated
             primary_ins_id = patient.insurance_coverage[0].insurance_id if patient.insurance_coverage else None
-            status = ClaimStatus.DENIED
-            denial_reason = DenialReason.DEPENDENT_ELIGIBILITY
+            status = ClaimStatus.DENIED if random.random() > 0.5 else ClaimStatus.PENDING  # 50/50 mix
+            denial_reason = DenialReason.DEPENDENT_ELIGIBILITY if status == ClaimStatus.DENIED else None
         elif scenario == "msp_violation":
             primary_ins_id = patient.insurance_coverage[0].insurance_id if patient.insurance_coverage else None
-            status = ClaimStatus.DENIED
-            denial_reason = DenialReason.MSP_VIOLATION
+            status = ClaimStatus.DENIED if random.random() > 0.5 else ClaimStatus.PENDING  # 50/50 mix
+            denial_reason = DenialReason.MSP_VIOLATION if status == ClaimStatus.DENIED else None
         elif scenario == "wrong_primary_order":
             # Billed Medicare first when commercial should be primary
             primary_ins_id = patient.insurance_coverage[0].insurance_id if patient.insurance_coverage else None
-            status = ClaimStatus.DENIED
-            denial_reason = DenialReason.WRONG_PRIMARY
+            status = ClaimStatus.DENIED if random.random() > 0.5 else ClaimStatus.PENDING  # 50/50 mix
+            denial_reason = DenialReason.WRONG_PRIMARY if status == ClaimStatus.DENIED else None
         elif scenario == "missing_secondary":
             primary_ins_id = patient.insurance_coverage[0].insurance_id if patient.insurance_coverage else None
             status = ClaimStatus.PAID
@@ -334,8 +334,8 @@ class SyntheticDataGenerator:
         elif scenario in ["auto_accident", "workers_comp"]:
             # Wrong payer billed as primary
             primary_ins_id = patient.insurance_coverage[0].insurance_id if patient.insurance_coverage else None
-            status = ClaimStatus.DENIED
-            denial_reason = DenialReason.AUTO_LIABILITY if is_accident else DenialReason.WRONG_PRIMARY
+            status = ClaimStatus.DENIED if random.random() > 0.5 else ClaimStatus.PENDING  # 50/50 mix
+            denial_reason = DenialReason.AUTO_LIABILITY if (is_accident and status == ClaimStatus.DENIED) else (DenialReason.WRONG_PRIMARY if status == ClaimStatus.DENIED else None)
         else:
             primary_ins_id = patient.insurance_coverage[0].insurance_id if patient.insurance_coverage else None
             status = ClaimStatus.PAID if random.random() > 0.3 else ClaimStatus.DENIED
