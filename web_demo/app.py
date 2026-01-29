@@ -140,7 +140,9 @@ def api_analyze():
                 'id': claim.claim_id,
                 'service_date': str(claim.service_date),
                 'billed_amount': round(claim.billed_amount, 2),
-                'status': claim.claim_status.value
+                'status': claim.claim_status.value,
+                'carc_code': claim.carc_code,
+                'rarc_code': claim.rarc_code
             }
         })
     
