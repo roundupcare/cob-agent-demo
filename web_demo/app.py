@@ -7,14 +7,20 @@ from flask import Flask, render_template, jsonify, request
 import sys
 import os
 
+# Get the absolute path to the current directory
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
 # Add parent directory to path to import our modules
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
 
 from synthetic_data import SyntheticDataGenerator
 from cob_agent import COBAgent
 from data_models import Patient, Claim
 
-app = Flask(__name__)
+# Initialize Flask with explicit template folder
+template_dir = os.path.join(current_dir, 'templates')
+app = Flask(__name__, template_folder=template_dir)
 
 # Global variables to store demo state
 demo_data = {
@@ -65,6 +71,23 @@ def run_analysis():
 def index():
     """Main demo page"""
     return render_template('index.html')
+
+
+@app.route('/debug')
+def debug():
+    """Debug endpoint to check file structure"""
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(current_dir)
+    
+    return jsonify({
+        'current_dir': current_dir,
+        'parent_dir': parent_dir,
+        'template_folder': app.template_folder,
+        'files_in_current': os.listdir(current_dir),
+        'files_in_parent': os.listdir(parent_dir) if os.path.exists(parent_dir) else [],
+        'templates_exists': os.path.exists(os.path.join(current_dir, 'templates')),
+        'templates_contents': os.listdir(os.path.join(current_dir, 'templates')) if os.path.exists(os.path.join(current_dir, 'templates')) else []
+    })
 
 
 @app.route('/api/initialize', methods=['POST'])
