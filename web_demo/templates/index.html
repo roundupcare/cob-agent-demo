@@ -348,9 +348,9 @@
                 </div>
                 
                 <div class="stat-card">
-                    <h3>High Priority</h3>
-                    <div class="value" id="highPriority">0</div>
-                    <div class="label">Urgent attention needed</div>
+                    <h3>High-Value Alerts</h3>
+                    <div class="value" id="highValueAlerts">0</div>
+                    <div class="label">Recovery > $25,000</div>
                 </div>
                 
                 <div class="stat-card highlight">
@@ -368,32 +368,25 @@
             
             <!-- Top Priority Alerts -->
             <div class="content-section">
-                <h2>🚨 Top 10 High-Value Alerts</h2>
+                <h2>🚨 High-Value Alerts (Recovery > $25,000)</h2>
+                <div style="margin-bottom: 15px; color: #718096; display: flex; justify-content: space-between; align-items: center;">
+                    <span id="alertCount">Showing 0 alerts</span>
+                    <div id="paginationControls" style="display: none;">
+                        <button class="btn btn-secondary" onclick="previousPage()" id="prevBtn" style="padding: 8px 16px; margin-right: 10px;">← Previous</button>
+                        <span id="pageInfo" style="margin: 0 15px; font-weight: 600;">Page 1 of 1</span>
+                        <button class="btn btn-secondary" onclick="nextPage()" id="nextBtn" style="padding: 8px 16px;">Next →</button>
+                    </div>
+                </div>
                 <div id="topAlerts"></div>
-            </div>
-            
-            <!-- Red Flag Accounts -->
-            <div class="content-section">
-                <h2>⚠️ Red Flag Accounts Requiring Review</h2>
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Patient ID</th>
-                            <th>Patient Name</th>
-                            <th>MRN</th>
-                            <th>Alert Count</th>
-                            <th>Total Recovery</th>
-                            <th>Top Issue</th>
-                        </tr>
-                    </thead>
-                    <tbody id="redFlagsTable"></tbody>
-                </table>
             </div>
         </div>
     </div>
     
     <script>
         let analysisResults = null;
+        let currentPage = 1;
+        let alertsPerPage = 10;
+        let allAlerts = [];
         
         function formatCurrency(amount) {
             return new Intl.NumberFormat('en-US', {
@@ -433,6 +426,8 @@
                 
                 if (data.success) {
                     analysisResults = data;
+                    allAlerts = data.top_alerts;
+                    currentPage = 1;
                     displayResults(data);
                     status.textContent = '✅ Analysis complete!';
                     results.classList.add('show');
@@ -451,7 +446,7 @@
             // Update stats
             document.getElementById('claimsProcessed').textContent = data.summary.claims_processed.toLocaleString();
             document.getElementById('alertsGenerated').textContent = data.summary.alerts_generated.toLocaleString();
-            document.getElementById('highPriority').textContent = data.summary.high_priority_alerts.toLocaleString();
+            document.getElementById('highValueAlerts').textContent = data.summary.high_value_alerts.toLocaleString();
             document.getElementById('totalRecovery').textContent = formatCurrency(data.summary.total_potential_recovery);
             
             // Alert types distribution
@@ -468,11 +463,41 @@
                 alertTypesGrid.appendChild(box);
             }
             
-            // Top alerts
+            // Display paginated alerts
+            displayAlerts();
+        }
+        
+        function displayAlerts() {
             const topAlerts = document.getElementById('topAlerts');
+            const alertCount = document.getElementById('alertCount');
+            const paginationControls = document.getElementById('paginationControls');
+            const pageInfo = document.getElementById('pageInfo');
+            const prevBtn = document.getElementById('prevBtn');
+            const nextBtn = document.getElementById('nextBtn');
+            
             topAlerts.innerHTML = '';
             
-            data.top_alerts.forEach((alert, index) => {
+            const totalPages = Math.ceil(allAlerts.length / alertsPerPage);
+            const startIdx = (currentPage - 1) * alertsPerPage;
+            const endIdx = Math.min(startIdx + alertsPerPage, allAlerts.length);
+            const pageAlerts = allAlerts.slice(startIdx, endIdx);
+            
+            // Update count and pagination info
+            alertCount.textContent = `Showing ${startIdx + 1}-${endIdx} of ${allAlerts.length} high-value alerts`;
+            pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+            
+            // Show/hide pagination
+            if (totalPages > 1) {
+                paginationControls.style.display = 'flex';
+                prevBtn.disabled = currentPage === 1;
+                nextBtn.disabled = currentPage === totalPages;
+            } else {
+                paginationControls.style.display = 'none';
+            }
+            
+            // Display alerts for current page
+            pageAlerts.forEach((alert, index) => {
+                const globalIndex = startIdx + index;
                 const card = document.createElement('div');
                 card.className = `alert-card ${alert.severity.toLowerCase()}`;
                 card.innerHTML = `
@@ -480,7 +505,7 @@
                         <div>
                             <span class="badge ${alert.severity.toLowerCase()}">${alert.severity}</span>
                             <span style="margin-left: 10px; font-weight: 600; color: #2d3748;">
-                                #${index + 1} - ${formatAlertType(alert.alert_type)}
+                                #${globalIndex + 1} - ${formatAlertType(alert.alert_type)}
                             </span>
                         </div>
                         <div class="alert-recovery">${formatCurrency(alert.estimated_recovery)}</div>
@@ -510,29 +535,31 @@
                 `;
                 topAlerts.appendChild(card);
             });
-            
-            // Red flags table
-            const redFlagsTable = document.getElementById('redFlagsTable');
-            redFlagsTable.innerHTML = '';
-            
-            data.red_flags.forEach(flag => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${flag.patient_id}</td>
-                    <td><strong>${flag.patient_name}</strong></td>
-                    <td>${flag.mrn}</td>
-                    <td><span class="badge high">${flag.alert_count}</span></td>
-                    <td><strong>${formatCurrency(flag.total_recovery)}</strong></td>
-                    <td>${formatAlertType(flag.top_issue)}</td>
-                `;
-                redFlagsTable.appendChild(row);
-            });
+        }
+        
+        function nextPage() {
+            const totalPages = Math.ceil(allAlerts.length / alertsPerPage);
+            if (currentPage < totalPages) {
+                currentPage++;
+                displayAlerts();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
+        
+        function previousPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                displayAlerts();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
         }
         
         function resetDemo() {
             document.getElementById('results').classList.remove('show');
             document.getElementById('status').textContent = '';
             analysisResults = null;
+            allAlerts = [];
+            currentPage = 1;
         }
         
         // Initialize on load
